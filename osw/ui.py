@@ -1,11 +1,12 @@
 import sys
+import threading
 from pathlib import Path
 
-from PySide6.QtCore import QPropertyAnimation, QTimer, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QFormLayout, QGraphicsOpacityEffect,
-    QHBoxLayout, QLineEdit, QMenu, QProgressBar, QPushButton, QSystemTrayIcon, QWidget,
+    QHBoxLayout, QLineEdit, QPushButton, QSystemTrayIcon, QWidget,
 )
 
 from . import settings
@@ -25,7 +26,6 @@ def _make_icon(color: str, filled: bool = False, opacity: float = 1.0) -> QIcon:
         p.setPen(Qt.NoPen)
         p.drawEllipse(cx - 24, cy - 24, 48, 48)
     else:
-        from PySide6.QtGui import QPen
         pen = QPen(QColor(color), 4)
         p.setPen(pen)
         p.setBrush(Qt.NoBrush)
@@ -53,7 +53,6 @@ class RecordingIndicator(QWidget):
         self.setGraphicsEffect(self._opacity_effect)
         self._opacity_effect.setOpacity(0.85)
 
-        # Position: top-center of primary screen
         screen = QApplication.primaryScreen().geometry()
         self.move(screen.width() // 2 - 6, 6)
 
@@ -65,12 +64,6 @@ class RecordingIndicator(QWidget):
         p.drawEllipse(0, 0, 12, 12)
         p.end()
 
-    def flash_done(self):
-        """Brief green flash then hide — signals transcription complete."""
-        self._opacity_effect.setOpacity(0.85)
-        p = self.grab()  # force repaint trick — just show green briefly
-        self.hide()
-
 
 class TrayIcon(QSystemTrayIcon):
     IDLE, RECORDING, PROCESSING = range(3)
@@ -78,10 +71,15 @@ class TrayIcon(QSystemTrayIcon):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._state = self.IDLE
+        self._hotkey = "Ctrl+Space"
         self._pulse_timer = QTimer()
         self._pulse_timer.timeout.connect(self._pulse_tick)
         self._pulse_opacity = 1.0
         self._pulse_dir = -1
+        self._update_icon()
+
+    def update_hotkey_tooltip(self, hotkey_str: str):
+        self._hotkey = hotkey_str.replace("+", " + ").title()
         self._update_icon()
 
     def set_state(self, state: int):
@@ -103,8 +101,8 @@ class TrayIcon(QSystemTrayIcon):
 
     def _update_icon(self):
         tooltips = {
-            self.IDLE: "OSW — Ctrl+Space to dictate",
-            self.RECORDING: "Recording... Ctrl+Space to stop",
+            self.IDLE: f"OSW — {self._hotkey} to dictate",
+            self.RECORDING: f"Recording... {self._hotkey} to stop",
             self.PROCESSING: "Transcribing...",
         }
         self.setToolTip(tooltips.get(self._state, ""))
@@ -118,10 +116,13 @@ class TrayIcon(QSystemTrayIcon):
 
 
 class SettingsDialog(QDialog):
+    _download_finished = Signal(bool)  # True = success, False = failure
+
     def __init__(self, current_settings: dict, on_changed, parent=None):
         super().__init__(parent)
         self._settings = dict(current_settings)
         self._on_changed = on_changed
+        self._download_finished.connect(self._on_download_finished)
         self.setWindowTitle("OSW")
         self.setFixedSize(320, 230)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
@@ -183,16 +184,6 @@ class SettingsDialog(QDialog):
         layout.addRow("Launch at login", self._autostart)
 
     @staticmethod
-    def _get_input_devices() -> list[tuple[int, str]]:
-        import sounddevice as sd
-        devices = sd.query_devices()
-        return [
-            (i, d["name"])
-            for i, d in enumerate(devices)
-            if d["max_input_channels"] > 0 and d["name"] not in ("default", "pipewire", "pulse")
-        ]
-
-    @staticmethod
     def _is_model_cached(model_id: str) -> bool:
         from faster_whisper.utils import _MODELS
         from huggingface_hub import scan_cache_dir
@@ -213,7 +204,6 @@ class SettingsDialog(QDialog):
             self._download_btn.setEnabled(True)
 
     def _download_model(self):
-        import threading
         model_id = settings.model_for_label(self._quality.currentText())
         self._download_btn.setText("...")
         self._download_btn.setEnabled(False)
@@ -222,12 +212,28 @@ class SettingsDialog(QDialog):
             try:
                 from faster_whisper.utils import download_model
                 download_model(model_id)
-                self._download_btn.hide()
+                self._download_finished.emit(True)
             except Exception:
-                self._download_btn.setText("Retry")
-                self._download_btn.setEnabled(True)
+                self._download_finished.emit(False)
 
         threading.Thread(target=do_download, daemon=True).start()
+
+    def _on_download_finished(self, success: bool):
+        if success:
+            self._download_btn.hide()
+        else:
+            self._download_btn.setText("Retry")
+            self._download_btn.setEnabled(True)
+
+    @staticmethod
+    def _get_input_devices() -> list[tuple[int, str]]:
+        import sounddevice as sd
+        devices = sd.query_devices()
+        return [
+            (i, d["name"])
+            for i, d in enumerate(devices)
+            if d["max_input_channels"] > 0 and d["name"] not in ("default", "pipewire", "pulse")
+        ]
 
     def _on_quality_changed(self, label: str):
         self._settings["model"] = settings.model_for_label(label)

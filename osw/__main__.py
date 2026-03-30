@@ -1,7 +1,5 @@
-import os
 import subprocess
 import sys
-import time
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication, QMenu
@@ -13,25 +11,24 @@ from .ui import RecordingIndicator, SettingsDialog, TrayIcon
 
 
 class Bridge(QObject):
-    toggled = Signal(bool)  # True = start recording, False = stop
+    toggled = Signal(bool)
     transcription_done = Signal(str)
     error_occurred = Signal(str)
 
 
 def _inject_text(text: str):
     if sys.platform == "linux":
-        subprocess.run(
-            ["xdotool", "type", "--clearmodifiers", "--delay", "3", "--", text],
-            timeout=10,
-        )
-    elif sys.platform == "darwin":
-        from pynput.keyboard import Controller, Key
-        kb = Controller()
-        kb.type(text)
+        try:
+            subprocess.run(
+                ["xdotool", "type", "--clearmodifiers", "--delay", "3", "--", text],
+                timeout=10,
+            )
+        except FileNotFoundError:
+            from pynput.keyboard import Controller
+            Controller().type(text)
     else:
         from pynput.keyboard import Controller
-        kb = Controller()
-        kb.type(text)
+        Controller().type(text)
 
 
 def main():
@@ -70,6 +67,7 @@ def main():
         nonlocal cfg
         cfg = new_cfg
         hotkey_listener.update_hotkey(cfg["hotkey"])
+        tray.update_hotkey_tooltip(cfg["hotkey"])
 
     settings_action.triggered.connect(open_settings)
     quit_action.triggered.connect(app.quit)
@@ -114,6 +112,9 @@ def main():
         )
         cfg["onboarding_shown"] = True
         settings.save(cfg)
+
+    # Initialize tooltip with current hotkey
+    tray.update_hotkey_tooltip(cfg["hotkey"])
 
     # Quit handler — stop threads BEFORE Qt tears down
     def do_quit():

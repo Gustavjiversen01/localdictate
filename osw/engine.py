@@ -90,5 +90,9 @@ class Engine:
             self._chunks.append(indata.copy())
 
     def unload(self):
+        if self.model:
+            del self.model
+            import gc
+            gc.collect()
         self.model = None
         self._model_name = None

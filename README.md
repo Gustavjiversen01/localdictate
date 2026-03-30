@@ -23,7 +23,7 @@ I wanted something like Apple's dictation — but local, open, and on Linux. Eve
 
 ```bash
 # Linux
-sudo apt install portaudio19-dev
+sudo apt install portaudio19-dev xdotool
 git clone https://github.com/Gustavjiversen01/OSW.git
 cd OSW
 pip install .
