@@ -50,7 +50,7 @@ Right-click the tray icon to open **Settings**, where you can configure:
 
 ## Models
 
-You don't need to download anything manually. The first time you dictate, OSW downloads your selected model from HuggingFace (~300 MB to ~3 GB depending on quality level). After that, it's cached locally and loads instantly.
+Models are not included in the install — they download automatically from HuggingFace the first time you use each quality level. This is a one-time download (~300 MB to ~3 GB depending on the model). After that, it's cached locally and loads in seconds.
 
 | Label | Model | Size | Notes |
 |---|---|---|---|
