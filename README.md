@@ -29,6 +29,7 @@ I wanted something like Apple's dictation — but local, open, and on Linux. Eve
 ```bash
 sudo apt install portaudio19-dev xdotool
 pip install git+https://github.com/Gustavjiversen01/localdictate.git
+localdictate
 ```
 
 Optional Wayland tools: `wtype` or `ydotool` for text injection on Wayland compositors.
@@ -38,6 +39,7 @@ Optional Wayland tools: `wtype` or `ydotool` for text injection on Wayland compo
 ```bash
 brew install portaudio
 pip install git+https://github.com/Gustavjiversen01/localdictate.git
+localdictate
 ```
 
 Note: macOS requires Accessibility permission for keyboard input.
@@ -46,13 +48,10 @@ Note: macOS requires Accessibility permission for keyboard input.
 
 ```powershell
 pip install git+https://github.com/Gustavjiversen01/localdictate.git
-```
-
-Then run:
-
-```bash
 localdictate
 ```
+
+That's it — `localdictate` installs as a command you can run from anywhere. It lives in your system tray.
 
 ## How it works
 
@@ -95,9 +94,24 @@ Custom models: set `"model"` in `~/.config/localdictate/settings.json` to any [f
 - macOS, Windows (experimental, unverified)
 - PortAudio (`portaudio19-dev` on Debian/Ubuntu)
 
+## Uninstall
+
+```bash
+pip uninstall localdictate
+```
+
 ## Contributing
 
 Bug reports and feature requests are welcome on the [issue tracker](https://github.com/Gustavjiversen01/localdictate/issues).
+
+To set up a development environment:
+
+```bash
+git clone https://github.com/Gustavjiversen01/localdictate.git
+cd localdictate
+pip install -e ".[dev]"
+pytest tests/
+```
 
 ## License
 
