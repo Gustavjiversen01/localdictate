@@ -343,8 +343,9 @@ def main():
         hotkey_display = cfg["hotkey"].replace("+", " + ").title()
         tray.showMessage(
             "LocalDictate",
-            f"Ready. Press {hotkey_display} to dictate.",
-            TrayIcon.MessageIcon.Information, 4000,
+            f"Ready. Press {hotkey_display} to dictate.\n"
+            "First use will download the speech model (~800 MB).",
+            TrayIcon.MessageIcon.Information, 5000,
         )
         cfg["onboarding_shown"] = True
         settings.save(cfg)

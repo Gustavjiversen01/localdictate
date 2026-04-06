@@ -73,7 +73,9 @@ Right-click the tray icon to open **Settings**, where you can configure:
 
 ## Models
 
-Models are not included in the install — they download automatically from HuggingFace the first time you use each quality level. This is a one-time download (~300 MB to ~3 GB depending on the model). After that, it's cached locally and loads in seconds.
+Models are not included in the install — they download automatically from HuggingFace the first time you dictate. This is a **one-time download** (~800 MB for the default model). The tray icon will show "Downloading model..." while it downloads. After that, it's cached locally and loads in seconds.
+
+> **Tip:** To avoid waiting on your first dictation, right-click the tray icon → Settings → click the **Download** button next to Quality. You can also pre-download other quality levels there.
 
 | Label | Model | Size | Notes |
 |---|---|---|---|
