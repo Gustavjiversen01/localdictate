@@ -28,7 +28,7 @@ I wanted something like Apple's dictation — but local, open, and on Linux. Eve
 
 ```bash
 sudo apt install portaudio19-dev xdotool
-pip install git+https://github.com/Gustavjiversen01/OSW.git
+pip install git+https://github.com/Gustavjiversen01/localdictate.git
 ```
 
 Optional Wayland tools: `wtype` or `ydotool` for text injection on Wayland compositors.
@@ -37,7 +37,7 @@ Optional Wayland tools: `wtype` or `ydotool` for text injection on Wayland compo
 
 ```bash
 brew install portaudio
-pip install git+https://github.com/Gustavjiversen01/OSW.git
+pip install git+https://github.com/Gustavjiversen01/localdictate.git
 ```
 
 Note: macOS requires Accessibility permission for keyboard input.
@@ -45,7 +45,7 @@ Note: macOS requires Accessibility permission for keyboard input.
 ### Windows (experimental, unverified)
 
 ```powershell
-pip install git+https://github.com/Gustavjiversen01/OSW.git
+pip install git+https://github.com/Gustavjiversen01/localdictate.git
 ```
 
 Then run:
@@ -97,7 +97,7 @@ Custom models: set `"model"` in `~/.config/localdictate/settings.json` to any [f
 
 ## Contributing
 
-Bug reports and feature requests are welcome on the [issue tracker](https://github.com/Gustavjiversen01/OSW/issues).
+Bug reports and feature requests are welcome on the [issue tracker](https://github.com/Gustavjiversen01/localdictate/issues).
 
 ## License
 

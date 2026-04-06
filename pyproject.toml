@@ -36,9 +36,9 @@ dev = ["pytest", "build", "twine"]
 localdictate = "localdictate.__main__:main"
 
 [project.urls]
-Homepage = "https://github.com/Gustavjiversen01/OSW"
-Source = "https://github.com/Gustavjiversen01/OSW"
-Issues = "https://github.com/Gustavjiversen01/OSW/issues"
+Homepage = "https://github.com/Gustavjiversen01/localdictate"
+Source = "https://github.com/Gustavjiversen01/localdictate"
+Issues = "https://github.com/Gustavjiversen01/localdictate/issues"
 
 [tool.pytest.ini_options]
 addopts = "-p no:launch_testing -p no:launch_testing_ros -p no:ament_flake8 -p no:ament_pep257 -p no:ament_xmllint -p no:ament_copyright -p no:ament_lint"
