@@ -25,7 +25,7 @@ dependencies = [
     "numpy>=1.24",
     "PySide6-Essentials>=6.5.0",
     "platformdirs>=3.0.0",
-    "pynput>=1.7.0",
+    "pynput>=1.8.1",
     "huggingface-hub",
 ]
 
