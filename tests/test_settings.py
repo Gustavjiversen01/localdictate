@@ -14,6 +14,11 @@ def test_defaults_when_no_file(tmp_path):
     assert cfg == settings.DEFAULTS
 
 
+def test_default_device_is_cpu():
+    # CPU works on every machine; GPU is opt-in via Settings.
+    assert settings.DEFAULTS["device"] == "cpu"
+
+
 def test_save_and_load_roundtrip(tmp_path):
     cfg_file = tmp_path / "settings.json"
     with (

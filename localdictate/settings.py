@@ -32,7 +32,7 @@ DEFAULTS = {
     "initial_prompt": None,  # condition Whisper (e.g. "no filler words")
     "length_penalty": 1.0,  # >1 penalises long sequences / filler words
     "language": None,  # None = auto-detect (English-only models default to "en")
-    "device": "auto",  # "auto", "cpu", or "cuda"
+    "device": "cpu",  # "cpu", "cuda", or "auto"; CPU is the safe cross-machine default
     "compute_type": "default",  # "default", "int8", "float16", etc.
 }
 

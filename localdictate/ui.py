@@ -192,7 +192,7 @@ class SettingsDialog(QDialog):
         self._on_changed = on_changed
         self._download_finished.connect(self._on_download_finished)
         self.setWindowTitle("LocalDictate")
-        self.setFixedSize(320, 230)
+        self.setFixedSize(320, 270)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
 
         layout = QFormLayout(self)
@@ -218,6 +218,22 @@ class SettingsDialog(QDialog):
         quality_layout.addWidget(self._download_btn)
         layout.addRow("Quality", quality_row)
         self._update_download_btn()
+
+        # Processing device (CPU / GPU). GPU needs an NVIDIA card + CUDA libs;
+        # disable it when none is detected so users can't pick a path that fails.
+        self._device = QComboBox()
+        self._device.addItem("CPU", "cpu")
+        self._device.addItem("GPU", "cuda")
+        if not self._cuda_available():
+            self._device.setItemText(1, "GPU (none detected)")
+            gpu_item = self._device.model().item(1)
+            if gpu_item is not None:
+                gpu_item.setEnabled(False)
+        # Map any stored value (incl. legacy "auto") to a concrete entry.
+        want_gpu = self._settings.get("device") == "cuda" and self._cuda_available()
+        self._device.setCurrentIndex(1 if want_gpu else 0)
+        self._device.currentIndexChanged.connect(self._on_device_changed)
+        layout.addRow("Processing", self._device)
 
         # Microphone
         self._mic = QComboBox()
@@ -306,6 +322,19 @@ class SettingsDialog(QDialog):
         self._settings["model"] = settings.model_for_label(label)
         self._save()
         self._update_download_btn()
+
+    @staticmethod
+    def _cuda_available() -> bool:
+        try:
+            import ctranslate2
+
+            return ctranslate2.get_cuda_device_count() > 0
+        except Exception:
+            return False
+
+    def _on_device_changed(self, _index: int):
+        self._settings["device"] = self._device.currentData()
+        self._save()
 
     def _on_mic_changed(self, index: int):
         if index == 0:
