@@ -6,13 +6,17 @@ import threading
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from . import settings
+from . import settings, single_instance
 from .engine import Engine
 from .hotkey import HotkeyListener
 from .state import AppState
 from .ui import FallbackWindow, RecordingIndicator, SettingsDialog, TrayIcon
 
 _wayland = os.environ.get("XDG_SESSION_TYPE") == "wayland" or "WAYLAND_DISPLAY" in os.environ
+
+# Holds the single-instance lock for the process lifetime (see main()). Closing
+# or dropping this handle releases the lock, so it must stay referenced.
+_instance_lock = None
 
 
 class Bridge(QObject):
@@ -119,6 +123,23 @@ def _try_paste_cmd():
 def main():
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+
+    # Refuse to start a second instance — two trays would fight over the global
+    # hotkey and microphone. The lock is held for the process lifetime via the
+    # module-level reference below.
+    global _instance_lock
+    _instance_lock = single_instance.acquire()
+    if _instance_lock is None:
+        from PySide6.QtWidgets import QMessageBox
+
+        print("LocalDictate is already running.", file=sys.stderr)
+        QMessageBox.information(
+            None,
+            "LocalDictate",
+            "LocalDictate is already running.\n\nLook for the icon in your "
+            "system tray.",
+        )
+        return 0
 
     cfg = settings.load()
     bridge = Bridge()
