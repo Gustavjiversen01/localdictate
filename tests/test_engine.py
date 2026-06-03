@@ -123,6 +123,104 @@ class TestEnsureModel:
         assert engine._cache_key == ("distil-medium.en", "cpu", "int8")
 
 
+class TestCudaFallback:
+    _CUBLAS_ERR = "Library libcublas.so.12 is not found or cannot be loaded"
+
+    def test_encode_time_cuda_failure_falls_back_to_cpu(self):
+        """A missing-cuBLAS failure during transcription (not load) must drop to
+        CPU and retry, not fail the dictation."""
+        engine = _make_engine()
+        engine._job_id = 1
+
+        gpu_model = MagicMock()
+        gpu_model.transcribe.side_effect = RuntimeError(self._CUBLAS_ERR)
+        seg = MagicMock(text=" hello world ")
+        cpu_model = MagicMock()
+        cpu_model.transcribe.return_value = ([seg], None)
+
+        def fake_ensure(model_name, device, compute_type):
+            if engine._disable_cuda:
+                engine.model = cpu_model
+                engine._cache_key = (model_name, "cpu", "int8")
+            else:
+                engine.model = gpu_model
+                engine._cache_key = (model_name, "cuda", "float16")
+
+        with patch("localdictate.engine.is_model_cached", return_value=True):
+            with patch.object(Engine, "_ensure_model", side_effect=fake_ensure):
+                engine._transcribe(
+                    np.zeros(48000, dtype=np.float32),
+                    "turbo", None, 1.0, "en", "auto", "default", 1,
+                )
+
+        engine._on_error.assert_not_called()
+        engine._on_transcription.assert_called_once_with(1, "hello world")
+        assert engine._disable_cuda is True
+        assert engine._cache_key == ("turbo", "cpu", "int8")
+
+    def test_non_cuda_error_is_reported_without_retry(self):
+        """An unrelated transcription error must surface as-is, with no CPU retry."""
+        engine = _make_engine()
+        engine._job_id = 1
+
+        model = MagicMock()
+        model.transcribe.side_effect = RuntimeError("some unrelated decode failure")
+
+        def fake_ensure(model_name, device, compute_type):
+            engine.model = model
+            engine._cache_key = (model_name, "cuda", "float16")
+
+        with patch("localdictate.engine.is_model_cached", return_value=True):
+            with patch.object(Engine, "_ensure_model", side_effect=fake_ensure):
+                engine._transcribe(
+                    np.zeros(48000, dtype=np.float32),
+                    "turbo", None, 1.0, "en", "auto", "default", 1,
+                )
+
+        engine._on_transcription.assert_not_called()
+        engine._on_error.assert_called_once()
+        assert "unrelated decode failure" in engine._on_error.call_args[0][1]
+        assert model.transcribe.call_count == 1  # no bogus retry
+
+    def test_load_time_cublas_error_falls_back_to_cpu(self):
+        """A GPU-related failure at model load (device=auto) retries on CPU."""
+        engine = _make_engine()
+
+        cpu_model = MagicMock()
+
+        def whisper(model_name, device, compute_type):
+            if device == "cuda":
+                raise RuntimeError(self._CUBLAS_ERR)
+            return cpu_model
+
+        with patch("ctranslate2.get_cuda_device_count", return_value=1):
+            with patch("faster_whisper.WhisperModel", side_effect=whisper, create=True):
+                with engine._model_lock:
+                    engine._ensure_model("turbo", "auto", "default")
+
+        assert engine.model is cpu_model
+        assert engine._cache_key == ("turbo", "cpu", "int8")
+        assert engine._disable_cuda is True
+
+    def test_explicit_cuda_device_does_not_fall_back(self):
+        """If the user explicitly picks CUDA, a failure is not silently downgraded."""
+        engine = _make_engine()
+
+        def whisper(model_name, device, compute_type):
+            raise RuntimeError(self._CUBLAS_ERR)
+
+        with patch("faster_whisper.WhisperModel", side_effect=whisper, create=True):
+            with engine._model_lock:
+                try:
+                    engine._ensure_model("turbo", "cuda", "float16")
+                    raised = False
+                except RuntimeError:
+                    raised = True
+
+        assert raised is True
+        assert engine._disable_cuda is False
+
+
 class TestUnload:
     def test_unload_skips_deletion_if_worker_alive(self):
         engine = _make_engine()

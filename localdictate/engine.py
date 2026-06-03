@@ -1,4 +1,5 @@
 import gc
+import os
 import threading
 import time
 from collections import deque
@@ -31,6 +32,9 @@ class Engine:
 
         self.model = None
         self._cache_key = None  # (model_name, device, compute_type)
+        # Set once a GPU run fails (load- or encode-time); pins "auto" to CPU so
+        # we don't repeatedly retry a broken CUDA path on every dictation.
+        self._disable_cuda = False
 
         self._chunks: deque[np.ndarray] = deque()
         self._stream = None
@@ -230,15 +234,26 @@ class Engine:
                         )
                     return
 
-                segments, _ = self.model.transcribe(
-                    audio,
-                    language=effective_language,
-                    beam_size=5,
-                    vad_filter=False,
-                    initial_prompt=initial_prompt,
-                    length_penalty=length_penalty,
-                )
-                text = " ".join(seg.text.strip() for seg in segments).strip()
+                try:
+                    text = self._run_transcription(
+                        audio, effective_language, initial_prompt, length_penalty
+                    )
+                except Exception as e:
+                    # CTranslate2 runs encode/decode lazily during iteration, so a
+                    # GPU runtime failure (e.g. missing libcublas) surfaces here,
+                    # after the model loaded fine. When device was "auto", drop to
+                    # CPU and retry once instead of failing the dictation.
+                    on_gpu = bool(self._cache_key) and self._cache_key[1] == "cuda"
+                    if device == "auto" and on_gpu and self._is_cuda_error(e):
+                        self._disable_cuda = True
+                        self._ensure_model(model_name, device, compute_type)  # → CPU
+                        if not _is_current():
+                            return
+                        text = self._run_transcription(
+                            audio, effective_language, initial_prompt, length_penalty
+                        )
+                    else:
+                        raise
 
             # Outside model lock — emit callbacks
             if _is_current():
@@ -254,15 +269,70 @@ class Engine:
             with self._job_lock:
                 self._workers.discard(threading.current_thread())
 
+    def _run_transcription(self, audio, language, initial_prompt, length_penalty) -> str:
+        """Transcribe and materialize the text. Must be called under _model_lock.
+
+        Iterating the segment generator is what actually triggers CTranslate2's
+        encode/decode (and thus any CUDA runtime failure), so we consume it here.
+        """
+        segments, _ = self.model.transcribe(
+            audio,
+            language=language,
+            beam_size=5,
+            vad_filter=False,
+            initial_prompt=initial_prompt,
+            length_penalty=length_penalty,
+        )
+        return " ".join(seg.text.strip() for seg in segments).strip()
+
+    @staticmethod
+    def _preload_cuda_libs():
+        """Make pip-installed CUDA runtime libs (cuBLAS/cuDNN) loadable by
+        CTranslate2.
+
+        CTranslate2 dlopen()s libcublas.so / libcudnn.so by soname at encode
+        time. The nvidia-*-cu12 wheels install these under site-packages and are
+        not on the default loader path, so without help the GPU path raises
+        "Library libcublas.so.12 is not found or cannot be loaded" mid-dictation.
+        Preloading them RTLD_GLOBAL here makes the symbols available to the later
+        dlopen. No-op when the wheels are absent.
+        """
+        import ctypes
+        import glob
+
+        try:
+            import nvidia
+        except Exception:
+            return
+        # `nvidia` is a namespace package (__file__ is None); use __path__.
+        bases = list(getattr(nvidia, "__path__", []))
+        # cublasLt before cublas (cublas depends on it)
+        for pat in (
+            "cublas/lib/libcublasLt.so*",
+            "cublas/lib/libcublas.so*",
+            "cudnn/lib/libcudnn.so*",
+        ):
+            for base in bases:
+                for f in sorted(glob.glob(os.path.join(base, pat))):
+                    try:
+                        ctypes.CDLL(f, mode=ctypes.RTLD_GLOBAL)
+                    except OSError:
+                        pass
+
+    # Substrings that mark an exception as a GPU/CUDA runtime failure (e.g. a
+    # missing libcublas/libcudnn, or no usable device). Matched case-insensitively.
+    _CUDA_ERROR_MARKERS = ("cuda", "cublas", "cudnn", "cudart", "nvidia", "gpu")
+
+    @classmethod
+    def _is_cuda_error(cls, e: Exception) -> bool:
+        msg = str(e).lower()
+        return any(m in msg for m in cls._CUDA_ERROR_MARKERS)
+
     def _ensure_model(self, model_name: str, device: str, compute_type: str):
         """Load model if needed. Must be called under _model_lock."""
-        cache_key = (model_name, device, compute_type)
-        if self.model and self._cache_key == cache_key:
-            return
-
-        from faster_whisper import WhisperModel
-
-        # Resolve auto device/compute
+        # Resolve auto device/compute FIRST so the cache key reflects what we
+        # actually load — otherwise an "auto" request never matches the stored
+        # resolved key and the model reloads on every dictation.
         resolved_device = device
         resolved_compute = compute_type
         if device == "auto" or compute_type == "default":
@@ -273,9 +343,18 @@ class Engine:
             except Exception:
                 has_cuda = False
             if device == "auto":
-                resolved_device = "cuda" if has_cuda else "cpu"
+                resolved_device = "cuda" if (has_cuda and not self._disable_cuda) else "cpu"
             if compute_type == "default":
                 resolved_compute = "float16" if resolved_device == "cuda" else "int8"
+
+        cache_key = (model_name, resolved_device, resolved_compute)
+        if self.model and self._cache_key == cache_key:
+            return
+
+        from faster_whisper import WhisperModel
+
+        if resolved_device == "cuda":
+            self._preload_cuda_libs()
 
         actual_device = resolved_device
         actual_compute = resolved_compute
@@ -286,8 +365,10 @@ class Engine:
                 compute_type=resolved_compute,
             )
         except Exception as e:
-            # GPU fallback: only retry CPU when device was "auto"
-            if device == "auto" and "cuda" in str(e).lower():
+            # GPU fallback: only retry CPU when device was "auto" and the failure
+            # looks GPU-related. Pin to CPU so later jobs skip the broken path.
+            if device == "auto" and resolved_device == "cuda" and self._is_cuda_error(e):
+                self._disable_cuda = True
                 actual_device = "cpu"
                 actual_compute = "int8"
                 new_model = WhisperModel(
